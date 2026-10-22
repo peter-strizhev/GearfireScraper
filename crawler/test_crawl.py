@@ -1,8 +1,9 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
-from crawl import build_report, decode_sveltekit
+from crawl import build_report, crawl, decode_sveltekit
 from gearfire_compliance import load_rules
 
 RULES = load_rules(Path(__file__).resolve().parents[1] / "washington-rules.csv")
@@ -59,6 +60,48 @@ class ClassifyTests(unittest.TestCase):
         self.assertNotIn("PMAG 10 GEN M3", hits)
         self.assertIn("WA-MAG-SPEC-EXT", hits["+5 Base Pad"])
         self.assertNotIn("Double Mag Pouch", hits)
+
+
+class FakeSite:
+    """Two categories of two products each; can 'lose power' after N requests."""
+    site = "https://example.test"
+
+    def __init__(self, fail_after=None):
+        self.calls, self.fail_after = [], fail_after
+
+    def data(self, path):
+        if self.fail_after is not None and len(self.calls) >= self.fail_after:
+            raise KeyboardInterrupt("power lost")
+        self.calls.append(path)
+        if path.startswith("/home"):
+            subs = [{"subCategoryId": s, "subCategoryName": s} for s in ("one", "two")]
+            return [{"initData": {"navList": [{"departmentId": "d", "departmentName": "Shop",
+                     "categories": [{"categoryId": "c", "categoryName": "Rifles", "subCategories": subs}]}]}}]
+        if "/detail/" in path:
+            pid = path.split("/detail/")[1].split("/")[0]
+            return [{"product": {"productId": pid, "modelName": pid, "subProducts": [
+                {"subProductId": "s" + pid, "upc": pid, "attributes": [], "isFirearm": True}]}}]
+        sub = "one" if "/one/" in path else "two"
+        return [{"products": [{"productId": f"{sub}-{i}", "subProductId": "x", "inStock": True} for i in (1, 2)],
+                 "pageSize": 24, "totalCount": 2}]
+
+
+class ResumeTests(unittest.TestCase):
+    def test_interrupted_crawl_resumes_without_refetching(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            # nav, listing one, two products, listing two, one product, then the power dies
+            with self.assertRaises(KeyboardInterrupt):
+                crawl(FakeSite(fail_after=6), out, [], None)
+            (out / "cache" / "two-2.json").write_text('{"productId": "tw')  # half-written file
+
+            site = FakeSite()
+            rows = crawl(site, out, [], None)
+
+            self.assertEqual(sorted(r["UPC"] for r in rows), ["one-1", "one-2", "two-1", "two-2"])
+            fetched = [c for c in site.calls if not c.startswith("/home")]
+            self.assertEqual(len(fetched), 1)  # only the corrupt product; listings came from disk
+            self.assertIn("/detail/two-2/", fetched[0])
 
 
 if __name__ == "__main__":

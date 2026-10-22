@@ -26,13 +26,22 @@ Google Chrome must be installed.
 .venv/bin/python crawl.py                                   # whole catalog, ~3 hours
 .venv/bin/python crawl.py --category rifles/semi-automatic  # one category
 .venv/bin/python crawl.py --report-only                     # re-score after editing rules
+.venv/bin/python crawl.py --resume                          # continue an interrupted crawl
 ```
+
+### If the crawl is interrupted
+
+Battery dies, laptop sleeps, Chrome crashes: run `crawl.py --resume`. It reuses the
+options the crawl was started with, skips every product and category listing already on
+disk, and carries on. Files are written atomically, so a power cut can't leave a corrupt
+one behind. A crash of the browser alone doesn't need a restart; the crawler relaunches
+Chrome itself. Use `caffeinate -i` in front of the command to stop the Mac from sleeping.
 
 Output goes in `crawler/output/`:
 
 - `wa-restricted-items.csv`: flagged UPCs with `Rule IDs`, `Reasons` (statute clause), and `Sources`
 - `inventory.csv`: every crawled UPC
-- `cache/`: raw product JSON, so an interrupted crawl resumes without refetching
+- `cache/`, `listings/`, `run.json`: saved progress used by `--resume`
 
 ## How items are flagged
 

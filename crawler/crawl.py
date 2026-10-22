@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -153,11 +155,39 @@ class Browser:
             self._pw.stop()
 
 
+# ---------------------------------------------------------------- crash-safe state
+
+def _write_json(path: Path, value: object) -> None:
+    """Write atomically, so a power loss never leaves a half-written file behind."""
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(value, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _read_json(path: Path) -> object | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, UnicodeDecodeError):  # written by an older, non-atomic run
+        path.unlink()
+        return None
+
+
 # ---------------------------------------------------------------- crawling
 
-def crawl(browser: Browser, cache_dir: Path, categories: list[str], max_products: int | None) -> list[dict]:
-    """Return one inventory row per sub-product (UPC/variant)."""
+def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: int | None) -> list[dict]:
+    """Return one inventory row per sub-product (UPC/variant).
+
+    Product JSON lands in out_dir/cache and each category's product list in
+    out_dir/listings, so a rerun after a crash skips everything already fetched.
+    """
+    cache_dir, listings_dir = out_dir / "cache", out_dir / "listings"
     cache_dir.mkdir(parents=True, exist_ok=True)
+    listings_dir.mkdir(parents=True, exist_ok=True)
     nav = browser.data("/home/__data.json")[0]["initData"]["navList"]
     rows: list[dict] = []
     fetched = 0
@@ -169,15 +199,18 @@ def crawl(browser: Browser, cache_dir: Path, categories: list[str], max_products
                     continue
                 base = (f"/{slugify(dept['departmentName'])}/{key}/"
                         f"{dept['departmentId']}/{cat['categoryId']}/{sub['subCategoryId']}")
-                listed = _list_products(browser, base)
+                listing_file = listings_dir / f"{sub['subCategoryId']}.json"
+                listed = _read_json(listing_file)
+                if listed is None:
+                    listed = _list_products(browser, base)
+                    _write_json(listing_file, listed)
                 print(f"{key}: {len(listed)} products", flush=True)
                 for product_id, sub_id, in_stock in listed:
                     if max_products is not None and fetched >= max_products:
                         return rows
                     cache_file = cache_dir / f"{product_id}.json"
-                    if cache_file.exists():
-                        product = json.loads(cache_file.read_text())
-                    else:
+                    product = _read_json(cache_file)
+                    if product is None:
                         try:
                             node = browser.data(f"/{slugify(dept['departmentName'])}/{key}/p"
                                                 f"/detail/{product_id}/{sub_id}/__data.json")[-1]
@@ -185,7 +218,7 @@ def crawl(browser: Browser, cache_dir: Path, categories: list[str], max_products
                             print(f"  missing product {product_id}", file=sys.stderr)
                             continue
                         product = node["product"]
-                        cache_file.write_text(json.dumps(product))
+                        _write_json(cache_file, product)
                     fetched += 1
                     rows.extend(_product_rows(product, key, browser.site, dept, in_stock))
     return rows
@@ -350,7 +383,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--show-window", action="store_true", help="Keep the Chrome window on screen")
     parser.add_argument("--report-only", action="store_true",
                         help="Skip crawling; rebuild the report from the existing inventory CSV")
+    parser.add_argument("--resume", action="store_true",
+                        help="Continue an interrupted crawl with the same options it was started with")
     args = parser.parse_args(argv)
+
+    state_path = args.out_dir / "run.json"
+    if args.resume and not args.report_only:
+        state = _read_json(state_path)
+        if not state or state.get("complete"):
+            print(f"Nothing to resume: no unfinished crawl recorded in {state_path}")
+            return 1
+        args = parser.parse_args(state["argv"] + ["--resume"])
+        print("Resuming: " + " ".join(state["argv"] or ["(full crawl)"]))
 
     rules = load_rules(args.rules)
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -360,12 +404,17 @@ def main(argv: list[str] | None = None) -> int:
         with inventory_path.open(encoding="utf-8-sig", newline="") as f:
             inventory = list(csv.DictReader(f))
     else:
+        if not args.resume:  # a new crawl re-lists categories to pick up catalog changes
+            shutil.rmtree(args.out_dir / "listings", ignore_errors=True)
+            saved = argv if argv is not None else sys.argv[1:]
+            _write_json(state_path, {"argv": [a for a in saved if a != "--resume"], "complete": False})
         browser = Browser(args.site_url, args.delay, hide_window=not args.show_window)
         try:
-            inventory = crawl(browser, args.out_dir / "cache", args.category, args.max_products)
+            inventory = crawl(browser, args.out_dir, args.category, args.max_products)
         finally:
             browser.close()
         write_csv(inventory_path, INVENTORY_FIELDS, inventory)
+        _write_json(state_path, {**(_read_json(state_path) or {}), "complete": True})
 
     report = build_report(inventory, rules)
     report_path = args.out_dir / "wa-restricted-items.csv"
