@@ -105,19 +105,36 @@ class Browser:
     def __init__(self, site: str, delay: float, hide_window: bool):
         from playwright.sync_api import sync_playwright
         self.site, self.delay = site.rstrip("/"), delay
-        self._pw = sync_playwright().start()
         # Headless Chrome is blocked by the site's CDN; a normal window is not.
-        args = ["--window-position=-3000,-3000"] if hide_window else []
-        self._browser = self._pw.chromium.launch(channel="chrome", headless=False, args=args)
+        self._args = ["--window-position=-3000,-3000"] if hide_window else []
+        self._pw = sync_playwright().start()
+        self._browser = None
+        self._start()
+
+    def _start(self) -> None:
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+        self._browser = self._pw.chromium.launch(channel="chrome", headless=False, args=self._args)
         self.page = self._browser.new_page()
         self.page.goto(self.site + "/home", wait_until="domcontentloaded")
 
     def data(self, path: str) -> list:
+        from playwright.sync_api import Error as PlaywrightError
         url = self.site + path
+        status = None
         for attempt in range(5):
             time.sleep(self.delay)
-            status, text = self.page.evaluate(
-                "u => fetch(u, {credentials: 'include'}).then(r => r.text().then(t => [r.status, t]))", url)
+            try:
+                status, text = self.page.evaluate(
+                    "u => fetch(u, {credentials: 'include'}).then(r => r.text().then(t => [r.status, t]))", url)
+            except PlaywrightError as error:  # window closed, crashed, or tab navigated away
+                print(f"  browser error ({error.message.splitlines()[0]}); relaunching", file=sys.stderr)
+                time.sleep(5)
+                self._start()
+                continue
             if status == 200:
                 return decode_sveltekit(text)
             if status == 404:
@@ -126,12 +143,14 @@ class Browser:
             print(f"  HTTP {status} for {url}; waiting {wait}s", file=sys.stderr)
             time.sleep(wait)
             if status == 403:  # re-establish the browser session before retrying
-                self.page.goto(self.site + "/home", wait_until="domcontentloaded")
-        raise RuntimeError(f"Giving up on {url} after repeated HTTP {status}")
+                self._start()
+        raise RuntimeError(f"Giving up on {url} (last HTTP status {status})")
 
     def close(self) -> None:
-        self._browser.close()
-        self._pw.stop()
+        try:
+            self._browser.close()
+        finally:
+            self._pw.stop()
 
 
 # ---------------------------------------------------------------- crawling
