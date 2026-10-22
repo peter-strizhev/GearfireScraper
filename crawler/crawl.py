@@ -39,8 +39,11 @@ AW_SCOPE = ("receivers-frames/", "parts-gunsmithing/conversion-kits", "magazines
 MAG_SCOPE = ("magazines/handgun", "magazines/rifle", "magazines/shotgun",
              "magazines/magazine-parts", "magazines/magazine-accessories")
 
+MANUAL_ACTIONS = ("bolt-action", "lever-action", "pump-action", "single-shot", "over-under",
+                  "side-by-side", "break-action", "revolver", "derringer", "combos")
 RIMFIRE = re.compile(r"(?i)rimfire|\.?22\s*(?:lr|l\.r|long|short|wmr|win(?:chester)?\s*mag|mag)\b"
                      r"|\.?17\s*(?:hmr|wsm|hm2|mach)")
+SHOTGUN_STOCK = re.compile(r"(?i)folding|telescop|collapsib|thumbhole|pistol\s*grip")
 STOCK_FEATURE = re.compile(r"(?i)adjustable|folding|telescop|collapsib|thumbhole|pistol\s*grip")
 
 
@@ -315,7 +318,9 @@ def spec_flags(row: dict) -> list[tuple[str, str, str]]:
                       "the pistol grip and/or has a barrel shroud (assault weapon, RCW 9.41.010 (a)(vi)(C)/(D)). "
                       "Verify configuration.", RCW_010))
     if cat == "shotguns/semi-automatic":
-        features = [n for n, hit in ((f"stock ({stock.strip()})", bool(STOCK_FEATURE.search(stock))),
+        # "Adjustable" on a shotgun usually means comb/shims, not the statute's folding or telescoping stock.
+        shotgun_stock = specs.get("stock type", "")
+        features = [n for n, hit in ((f"stock ({shotgun_stock})", bool(SHOTGUN_STOCK.search(shotgun_stock))),
                                      (f"capacity {capacity} (>7)", capacity is not None and capacity > 7)) if hit]
         if features:
             flags.append(("WA-AW-SPEC-SHOTGUN", "Semiautomatic shotgun with " + ", ".join(features)
@@ -329,7 +334,9 @@ def spec_flags(row: dict) -> list[tuple[str, str, str]]:
             flags.append(("WA-MAG-SPEC-FIREARM", f"Firearm listed with {capacity}-round capacity, i.e. sold with "
                           f"a large capacity magazine. {LCM_NOTE} Can only be sold in WA with magazines of 10 rounds "
                           "or fewer.", RCW_370))
-    if cat.startswith("magazines/magazine-") and re.search(r"\+\s?[1-9]\b|extension|extended|base\s*pad", text):
+    if cat.startswith("magazines/magazine-") and re.search(
+            r"\+\s?[1-9]\b|\b(?:magazine|mag|tube)\s+extension|extension\s+(?:kit|tube)"
+            r"|(?:adds?|additional|extra)\s+\d+\s*(?:round|rd)", text):
         flags.append(("WA-MAG-SPEC-EXT", "Magazine extension/base pad that adds capacity: a part from which a "
                       f"large capacity magazine can be assembled. {LCM_NOTE} Verify resulting capacity.", RCW_370))
     return flags
@@ -338,12 +345,17 @@ def spec_flags(row: dict) -> list[tuple[str, str, str]]:
 def classify(row: dict, rules: list) -> list[tuple[str, str, str]]:
     cat = row["Category"]
     hits = spec_flags(row)
-    aw_scope = bool(row["Is Firearm"]) or cat.startswith(AW_SCOPE)
-    mag_scope = bool(row["Is Firearm"]) or cat.startswith(MAG_SCOPE)
+    # RCW 9.41.010 excludes manually operated firearms from "assault weapon"; suppressors
+    # are a feature of one, not one themselves.
+    manual = any(action in cat for action in MANUAL_ACTIONS)
+    aw_scope = (bool(row["Is Firearm"]) or cat.startswith(AW_SCOPE)) and not manual \
+        and cat != "nfa-suppressors/suppressors"
+    # A structured Capacity spec beats free text ("22/45", "fits Glock 17, 19").
+    mag_scope = cat.startswith(MAG_SCOPE) and not row["Is Firearm"] and "capacity" not in _specs(row)
     fields = ["Name", "Manufacturer", "Description", "Specs", "Category"]
     for rule in _matching_rules(row, "UPC", fields, rules):
         if rule.match_type == "upc" or (rule.rule_id.startswith("WA-AW") and aw_scope) \
-                or (rule.rule_id.startswith("WA-MAG") and mag_scope and not row["Is Firearm"]):
+                or (rule.rule_id.startswith("WA-MAG") and mag_scope):
             hits.append((rule.rule_id, rule.reason, rule.source))
     if "lever-action" in cat and all(h[0].startswith("WA-MAG") for h in hits):
         return []  # lever-action tubes are excluded from the LCM definition

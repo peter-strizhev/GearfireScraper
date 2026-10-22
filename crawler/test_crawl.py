@@ -39,7 +39,19 @@ class ClassifyTests(unittest.TestCase):
             row("Compact 9", "handguns/semi-automatic", "Caliber: 9mm; Capacity: 15 Round; Threaded: No"),
             row("Threaded 9", "handguns/semi-automatic", "Caliber: 9mm; Capacity: 10 Round; Threaded: Yes"),
             row("Lever 30-30", "rifles/lever-action", "Caliber: 30-30; Capacity: 11 Round"),
+            row("T3x Ace Target", "rifles/bolt-action", "Caliber: 308", "Accepts AR-10 and AR-15 magazines"),
+            row("Outfitter G3", "rifles/single-shot", "Caliber: 350 Legend"),
+            row("1911-A1", "handguns/semi-automatic", "Caliber: 45 ACP", "Auto-Ordnance 1911"),
+            row("Thompson 1927A1", "rifles/semi-automatic", "Caliber: 45 ACP"),
+            row("A5 Upland", "shotguns/semi-automatic", "Stock Type: Adjustable; Capacity: 4 Round"),
+            row("Tactical 12ga", "shotguns/semi-automatic", "Stock Type: Pistol Grip; Capacity: 6 Round"),
         )
+        self.assertNotIn("A5 Upland", hits)
+        self.assertIn("WA-AW-SPEC-SHOTGUN", hits["Tactical 12ga"])
+        self.assertNotIn("T3x Ace Target", hits)
+        self.assertNotIn("Outfitter G3", hits)
+        self.assertNotIn("1911-A1", hits)
+        self.assertIn("WA-AW-008", hits["Thompson 1927A1"])
         self.assertIn("WA-AW-SPEC-RIFLE", hits["Patriot 5.56"])
         self.assertNotIn("Rimfire Carbine", hits)
         self.assertNotIn("Fixed Mag Rifle", hits)
@@ -52,13 +64,26 @@ class ClassifyTests(unittest.TestCase):
         hits = flagged(
             row("PMAG 30 GEN M3", "magazines/rifle", "Capacity: 30 Round", firearm=False),
             row("PMAG 10 GEN M3", "magazines/rifle", "Capacity: 10 Round", firearm=False),
+            row("Mark IV 22/45 Magazine", "magazines/handgun", "Capacity: 10 Round", "22/45", firearm=False),
+            row("Drum (no spec)", "magazines/rifle", "", "50 round drum magazine", firearm=False),
             row("+5 Base Pad", "magazines/magazine-accessories", "", "Adds 5 rounds", firearm=False),
+            row("Magazine Spacer Glock", "magazines/magazine-parts", "", "Fits Glock 26/27, extended grip",
+                firearm=False),
+            row("Desert Eagle Caliber Conversion", "parts-gunsmithing/conversion-kits", "",
+                "Caliber conversion kit", firearm=False),
+            row("Micro Conversion Kit", "parts-gunsmithing/conversion-kits", "",
+                "Glock conversion kit with stock and shroud", firearm=False),
             row("Double Mag Pouch", "holster-magazine-pouches/mag-pouches", "",
                 "Holds two AR-15 30 round magazines", firearm=False),
         )
         self.assertIn("WA-MAG-SPEC", hits["PMAG 30 GEN M3"])
         self.assertNotIn("PMAG 10 GEN M3", hits)
+        self.assertNotIn("Mark IV 22/45 Magazine", hits)
+        self.assertIn("WA-MAG-002", hits["Drum (no spec)"])
         self.assertIn("WA-MAG-SPEC-EXT", hits["+5 Base Pad"])
+        self.assertNotIn("Magazine Spacer Glock", hits)
+        self.assertNotIn("Desert Eagle Caliber Conversion", hits)
+        self.assertIn("WA-AW-044", hits["Micro Conversion Kit"])
         self.assertNotIn("Double Mag Pouch", hits)
 
 
