@@ -192,15 +192,27 @@ def crawl(browser: Browser, cache_dir: Path, categories: list[str], max_products
 
 
 def _list_products(browser: Browser, base: str) -> list[tuple[str, str, bool]]:
+    # The default listing order is unstable between requests, so a single pass over the
+    # pages repeats some products and skips others. Union passes over several sort orders
+    # until every product in totalCount has been seen.
     found: dict[str, tuple[str, str, bool]] = {}
-    page = 0
-    while True:
-        node = browser.data(f"{base}/__data.json?page={page}")[-1]
-        for item in node["products"]:
-            found.setdefault(item["productId"], (item["productId"], item["subProductId"], bool(item.get("inStock"))))
-        page += 1
-        if not node["products"] or page * node["pageSize"] >= node["totalCount"]:
-            return list(found.values())
+    total = 0
+    for sort_by in (2, 3, 6, 0, 1, 4, 5):
+        page = 0
+        while True:
+            node = browser.data(f"{base}/__data.json?page={page}&sortBy={sort_by}")[-1]
+            total = node["totalCount"]
+            for item in node["products"]:
+                found.setdefault(item["productId"],
+                                 (item["productId"], item["subProductId"], bool(item.get("inStock"))))
+            page += 1
+            if not node["products"] or page * node["pageSize"] >= total:
+                break
+        if len(found) >= total:
+            break
+    if len(found) < total:
+        print(f"  WARNING: listed {len(found)} of {total} products for {base}", file=sys.stderr)
+    return list(found.values())
 
 
 def _html_to_text(value: str) -> str:
