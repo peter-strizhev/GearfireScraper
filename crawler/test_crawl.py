@@ -50,7 +50,7 @@ class ClassifyTests(unittest.TestCase):
             row("DS-15 Fixed Mag Lower", "receivers-frames/lower", "", "AR-15 Fixed Magazine lower", firearm=True),
             row("AR-15 Stripped Lower", "receivers-frames/lower", "", "Mil-spec AR-15 lower", firearm=True),
             row("AR-15 Stripped Upper", "receivers-frames/upper", "", "Mil-spec AR-15 upper", firearm=False),
-            row("Benelli M4", "shotguns/semi-automatic", "Stock Type: Synthetic; Capacity: 5 Round", "Benelli M4 Tactical"),
+            row("Benelli M4", "shotguns/semi-automatic", "Stock Type: Synthetic; Capacity: 5 Round", "Brand: Benelli Model: M4 Tactical"),
             row("A5 Upland", "shotguns/semi-automatic", "Stock Type: Adjustable; Capacity: 4 Round"),
             row("Tactical 12ga", "shotguns/semi-automatic", "Stock Type: Pistol Grip; Capacity: 6 Round"),
         )

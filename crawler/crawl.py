@@ -365,6 +365,8 @@ def classify(row: dict, rules: list) -> list[tuple[str, str, str]]:
     mag_scope = cat.startswith(MAG_SCOPE) and not row["Is Firearm"] and "capacity" not in _specs(row)
     fields = ["Name", "Manufacturer", "Description", "Specs", "Category"]
     for rule in _matching_rules(row, "UPC", fields, rules):
+        if rule.rule_id == "WA-AW-004" and cat.startswith("shotguns/"):
+            continue  # AR15/M16/M4 are rifles; "M4" in a shotgun listing is the Benelli M4
         if rule.match_type == "upc" or (rule.rule_id.startswith("WA-AW") and aw_scope) \
                 or (rule.rule_id.startswith("WA-MAG") and mag_scope):
             hits.append((rule.rule_id, rule.reason, rule.source))
