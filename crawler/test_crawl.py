@@ -43,9 +43,21 @@ class ClassifyTests(unittest.TestCase):
             row("Outfitter G3", "rifles/single-shot", "Caliber: 350 Legend"),
             row("1911-A1", "handguns/semi-automatic", "Caliber: 45 ACP", "Auto-Ordnance 1911"),
             row("Thompson 1927A1", "rifles/semi-automatic", "Caliber: 45 ACP"),
+            row("DS-15 MOE", "rifles/semi-automatic", "Caliber: 5.56 NATO; Threaded: Yes; Capacity: 10 Round",
+                "AR-15 pattern Fixed Magazine Rifle"),
+            row("Fixed Mag 20", "rifles/semi-automatic", "Caliber: 5.56 NATO; Capacity: 20 Round",
+                "AR-15 fixed magazine rifle"),
+            row("DS-15 Fixed Mag Lower", "receivers-frames/lower", "", "AR-15 Fixed Magazine lower", firearm=True),
+            row("AR-15 Stripped Lower", "receivers-frames/lower", "", "Mil-spec AR-15 lower", firearm=True),
+            row("AR-15 Stripped Upper", "receivers-frames/upper", "", "Mil-spec AR-15 upper", firearm=False),
             row("A5 Upland", "shotguns/semi-automatic", "Stock Type: Adjustable; Capacity: 4 Round"),
             row("Tactical 12ga", "shotguns/semi-automatic", "Stock Type: Pistol Grip; Capacity: 6 Round"),
         )
+        self.assertNotIn("DS-15 MOE", hits)
+        self.assertIn("WA-AW-004", hits["Fixed Mag 20"])
+        self.assertNotIn("DS-15 Fixed Mag Lower", hits)
+        self.assertIn("WA-AW-004", hits["AR-15 Stripped Lower"])
+        self.assertNotIn("AR-15 Stripped Upper", hits)
         self.assertNotIn("A5 Upland", hits)
         self.assertIn("WA-AW-SPEC-SHOTGUN", hits["Tactical 12ga"])
         self.assertNotIn("T3x Ace Target", hits)
@@ -83,7 +95,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertIn("WA-MAG-SPEC-EXT", hits["+5 Base Pad"])
         self.assertNotIn("Magazine Spacer Glock", hits)
         self.assertNotIn("Desert Eagle Caliber Conversion", hits)
-        self.assertIn("WA-AW-044", hits["Micro Conversion Kit"])
+        self.assertNotIn("Micro Conversion Kit", hits)  # store policy: non-receiver parts
         self.assertNotIn("Double Mag Pouch", hits)
 
 

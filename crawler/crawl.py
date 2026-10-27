@@ -39,6 +39,12 @@ AW_SCOPE = ("receivers-frames/", "parts-gunsmithing/conversion-kits", "magazines
 MAG_SCOPE = ("magazines/handgun", "magazines/rifle", "magazines/shotgun",
              "magazines/magazine-parts", "magazines/magazine-accessories")
 
+# Store policy: only the serialized receiver is a regulated part, so stand-alone uppers and
+# gunsmithing parts (incl. conversion kits) are not treated as assault-weapon parts.
+NON_RECEIVER_PARTS = ("receivers-frames/upper", "parts-gunsmithing/")
+# Store policy: a firearm with a permanently fixed magazine of 10 or fewer rounds (e.g. Dark
+# Storm DS-15/DS-25) does not accept a detachable magazine and is not treated as an assault weapon.
+FIXED_MAGAZINE = re.compile(r"(?i)fixed[\s-]+mag(?:azine)?\b|non-?detachable|retained\s+(?:\d+[\s-]round\s+)?mag")
 MANUAL_ACTIONS = ("bolt-action", "lever-action", "pump-action", "single-shot", "over-under",
                   "side-by-side", "break-action", "revolver", "derringer", "combos")
 RIMFIRE = re.compile(r"(?i)rimfire|\.?22\s*(?:lr|l\.r|long|short|wmr|win(?:chester)?\s*mag|mag)\b"
@@ -345,11 +351,16 @@ def spec_flags(row: dict) -> list[tuple[str, str, str]]:
 def classify(row: dict, rules: list) -> list[tuple[str, str, str]]:
     cat = row["Category"]
     hits = spec_flags(row)
+    capacity = _first_int(_specs(row).get("capacity", ""))
+    fixed_ok = bool(FIXED_MAGAZINE.search(f"{row['Name']} {row['Description']}")) \
+        and (capacity is None or capacity <= 10)
+    if fixed_ok:
+        hits = [h for h in hits if not h[0].startswith("WA-AW")]
     # RCW 9.41.010 excludes manually operated firearms from "assault weapon"; suppressors
     # are a feature of one, not one themselves.
     manual = any(action in cat for action in MANUAL_ACTIONS)
-    aw_scope = (bool(row["Is Firearm"]) or cat.startswith(AW_SCOPE)) and not manual \
-        and cat != "nfa-suppressors/suppressors"
+    aw_scope = (bool(row["Is Firearm"]) or cat.startswith(AW_SCOPE)) and not manual and not fixed_ok \
+        and cat != "nfa-suppressors/suppressors" and not cat.startswith(NON_RECEIVER_PARTS)
     # A structured Capacity spec beats free text ("22/45", "fits Glock 17, 19").
     mag_scope = cat.startswith(MAG_SCOPE) and not row["Is Firearm"] and "capacity" not in _specs(row)
     fields = ["Name", "Manufacturer", "Description", "Specs", "Category"]
