@@ -1,0 +1,9 @@
+services:
+  gearfire:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    shm_size: "2gb"
+    volumes:
+      - ./data:/data

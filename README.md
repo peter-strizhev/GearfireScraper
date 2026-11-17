@@ -120,3 +120,18 @@ Run the standard-library test suite with:
 ```sh
 python3 -m unittest discover -s tests -v
 ```
+
+## Container deployment
+
+The [`deploy/`](./deploy/) folder contains a Docker deployment for the
+structured crawler. It keeps the container running and runs weekly on Sunday
+at noon Pacific time by default. Configure the persistent schedule and output
+location, then start it with:
+
+```sh
+docker compose -f deploy/compose.yaml run --rm gearfire \
+  configure --output-dir /data/output
+docker compose -f deploy/compose.yaml up -d --build
+```
+
+See [`deploy/README.md`](./deploy/README.md) for volume and timezone options.
