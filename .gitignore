@@ -1,5 +1,26 @@
+# Python caches and virtual environments
 __pycache__/
+*.py[cod]
 .venv/
-node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Local configuration and operating system files
+.env
+.env.*
+!.env.example
+.DS_Store
+*.swp
+
+# Generated runtime data and reports
+/crawler/output/
+/deploy/data/
+/results/
+/review-candidates.csv
+/scraped-inventory.csv
+*.log
 *.tmp
-crawler/output/
+
+node_modules/
