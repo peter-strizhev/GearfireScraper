@@ -1,0 +1,1 @@
+{"argv": ["--site-url", "https://panteltactical.com", "--rules", "/app/washington-rules.csv", "--out-dir", "/data/output/dashboard/5a700f4d6312429084022fa4161b4881", "--delay", "0.5", "--category", "magazines/rifle", "--exact-category"], "complete": true}

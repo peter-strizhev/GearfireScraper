@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gearfire scan dashboard</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #172a35; background: #edf2f2; }
+    body { margin: 0; }
+    main { max-width: 720px; margin: 6vh auto; padding: 0 20px; }
+    h1 { font-size: 2rem; margin-bottom: .35rem; }
+    .subtitle { color: #526870; margin-top: 0; }
+    section { background: white; border: 1px solid #d5e0df; border-radius: 12px; padding: 24px; margin: 20px 0; box-shadow: 0 8px 26px #173a3a0c; }
+    label { display: block; font-weight: 650; margin-bottom: 8px; }
+    select, button { font: inherit; border-radius: 6px; padding: 11px 14px; }
+    select { width: 100%; border: 1px solid #9aafae; background: white; }
+    button { background: #176557; color: white; border: 0; cursor: pointer; margin-top: 16px; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    #message { color: #a32828; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #status { font-weight: 600; }
+    .links a { display: inline-block; margin: 8px 16px 0 0; color: #176557; }
+    .hint { color: #526870; font-size: .9rem; }
+    .progress { background: #f3f7f6; border: 1px solid #d5e0df; border-radius: 6px; padding: 14px; margin-top: 12px; }
+    .progress h3 { margin: 0 0 8px; font-size: 1rem; }
+    .progress pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow-y: auto; margin: 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Gearfire scan dashboard</h1>
+  <p class="subtitle">Choose a storefront section and download the results.</p>
+  <section>
+    <label for="section">Section to scan</label>
+    <select id="section"><option value="">All sections</option></select>
+    <p class="hint" id="sections-status">Loading storefront sections…</p>
+    <button id="refresh-sections" type="button">Refresh sections</button>
+    <button id="start" type="button">Start scan</button>
+    <p id="message" role="alert"></p>
+  </section>
+  <section aria-live="polite">
+    <h2>Latest scan</h2>
+    <p id="status">Checking status…</p>
+    <p class="hint">A full catalog scan can take hours. You can close this page while it runs.</p>
+    <div class="progress">
+      <h3>Scan activity</h3>
+      <pre id="progress">Waiting for scan activity…</pre>
+    </div>
+    <div id="downloads" class="links" hidden>
+      <a href="/download/report">Download review report CSV</a>
+      <a href="/download/inventory">Download inventory CSV</a>
+    </div>
+    <div id="log" class="links" hidden><a href="/download/log">Download scan log</a></div>
+  </section>
+  <p class="hint">Results are candidates for review, not legal determinations.</p>
+</main>
+<script>
+  const token = "__TOKEN__";
+  const section = document.querySelector("#section");
+  const start = document.querySelector("#start");
+  const refreshSections = document.querySelector("#refresh-sections");
+  const message = document.querySelector("#message");
+  async function loadSections(forceRefresh = false) {
+    refreshSections.disabled = true;
+    try {
+      const response = forceRefresh
+        ? await fetch("/api/sections/refresh", {method: "POST", headers: {"X-Dashboard-Token": token}})
+        : await fetch("/api/sections");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      const previous = section.value;
+      section.replaceChildren(new Option("All sections", ""));
+      for (const name of data) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        section.append(option);
+      }
+      if (data.includes(previous)) section.value = previous;
+      document.querySelector("#sections-status").textContent = `${data.length} saved sections available.`;
+      message.textContent = "";
+    } catch (error) {
+      document.querySelector("#sections-status").textContent = "Could not load sections; any previously loaded choices remain available.";
+      message.textContent = error.message;
+    } finally {
+      refreshSections.disabled = false;
+    }
+  }
+  async function refresh() {
+    try {
+      const response = await fetch("/api/status");
+      if (!response.ok) throw new Error("Could not retrieve scan status.");
+      const state = await response.json();
+      document.querySelector("#status").textContent = state.status === "idle" ? "No scan started." :
+        `${state.status.toUpperCase()} — ${state.section || "All sections"}${state.error ? ": " + state.error : ""}`;
+      start.disabled = state.status === "running";
+      document.querySelector("#downloads").hidden = state.status !== "complete";
+      document.querySelector("#log").hidden = !state.id;
+      const progress = state.progress || {};
+      function describe(label, item, manualStatus) {
+        if (!item) return `${label}: No section activity yet.`;
+        if (item.error) return `${label}: ${item.error}`;
+        const status = manualStatus === "interrupted" ? "interrupted" : item.status;
+        const recent = item.sections_started.slice(-8);
+        const current = item.current_section || "Waiting for first section";
+        return `${label} (${status}, last reported): ${current}` +
+          (item.current_item ? `\nItem: ${item.current_item}` : "") +
+          (recent.length ? `\nRecent sections:\n${recent.join("\n")}` : "");
+      }
+      document.querySelector("#progress").textContent =
+        describe("Dashboard scan", progress.manual, state.status) + "\n\n" +
+        describe("Scheduled / CLI scan", progress.scheduled);
+    } catch (error) { message.textContent = error.message; }
+  }
+  start.addEventListener("click", async () => {
+    message.textContent = "";
+    start.disabled = true;
+    try {
+      const response = await fetch("/api/scan", {
+        method: "POST", headers: {"Content-Type": "application/json", "X-Dashboard-Token": token},
+        body: JSON.stringify({section: section.value})
+      });
+      refreshSections.addEventListener("click", () => loadSections(true));
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+    } catch (error) { message.textContent = error.message; }
+    await refresh();
+  });
+  loadSections();
+  refresh();
+  setInterval(refresh, 3000);
+</script>
+</body>
+</html>

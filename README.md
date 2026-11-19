@@ -30,13 +30,13 @@ each rule against the current RCW and your transaction facts before using it.
 
 Each non-empty rules row must include:
 
-| Column | Meaning |
-| --- | --- |
-| `rule_id` | A unique identifier for the rule |
+| Column         | Meaning                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `rule_id`    | A unique identifier for the rule                                                                                   |
 | `match_type` | `upc` for an exact UPC match, `keyword` for a literal text match, or `regex` for a Python regular expression |
-| `pattern` | The UPC, case-insensitive text phrase, or regular expression to look for |
-| `reason` | Why the rule is being applied; describe it as a review reason, not a legal conclusion |
-| `source` | An official source URL or citation supporting the reviewed rule |
+| `pattern`    | The UPC, case-insensitive text phrase, or regular expression to look for                                           |
+| `reason`     | Why the rule is being applied; describe it as a review reason, not a legal conclusion                              |
+| `source`     | An official source URL or citation supporting the reviewed rule                                                    |
 
 UPC matching ignores spaces and hyphens but preserves leading zeroes. Keyword
 matching is a case-insensitive literal substring search. Regex matching is
@@ -47,7 +47,7 @@ than treating product text as a complete legal determination.
 
 For current requirements, consult official Washington sources such as the
 [Revised Code of Washington, chapter 9.41](https://app.leg.wa.gov/RCW/default.aspx?cite=9.41)
-and the [Washington State Attorney General's firearms information](https://www.atg.wa.gov/firearms).
+and the [Washington State Attorney General&#39;s firearms information](https://www.atg.wa.gov/firearms).
 Confirm the specific provision and its current applicability with a qualified
 professional before adding a rule.
 
@@ -125,7 +125,9 @@ python3 -m unittest discover -s tests -v
 
 The [`deploy/`](./deploy/) folder contains a Docker deployment for the
 structured crawler. It keeps the container running and runs weekly on Sunday
-at noon Pacific time by default. Configure the persistent schedule and output
+at noon Pacific time by default. It also provides a local dashboard for
+selecting a storefront section, starting a scan, and downloading CSV reports.
+Configure the persistent schedule and output
 location, then start it with:
 
 ```sh
@@ -134,4 +136,5 @@ docker compose -f deploy/compose.yaml run --rm gearfire \
 docker compose -f deploy/compose.yaml up -d --build
 ```
 
+Open [http://localhost:8080/](http://localhost:8080/) after starting the container.
 See [`deploy/README.md`](./deploy/README.md) for volume and timezone options.

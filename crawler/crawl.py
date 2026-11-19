@@ -165,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delay", type=float, default=0.5, help="Seconds between requests")
     parser.add_argument("--category", action="append", default=[],
                         help="Only crawl categories containing this text, e.g. 'rifles/semi-automatic' (repeatable)")
+    parser.add_argument("--exact-category", action="store_true",
+                        help="Match category values exactly instead of as substrings")
     parser.add_argument("--max-products", type=int, help="Stop after N products (for a quick test)")
     parser.add_argument("--show-window", action="store_true", help="Keep the Chrome window on screen")
     parser.add_argument("--report-only", action="store_true",
@@ -186,25 +188,55 @@ def main(argv: list[str] | None = None) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     inventory_path = args.out_dir / "inventory.csv"
 
-    if args.report_only:
-        with inventory_path.open(encoding="utf-8-sig", newline="") as f:
-            inventory = list(csv.DictReader(f))
-    else:
-        if not args.resume:  # a new crawl re-lists categories to pick up catalog changes
-            shutil.rmtree(args.out_dir / "listings", ignore_errors=True)
-            saved = argv if argv is not None else sys.argv[1:]
-            _write_json(state_path, {"argv": [a for a in saved if a != "--resume"], "complete": False})
-        browser = Browser(args.site_url, args.delay, hide_window=not args.show_window)
-        try:
-            inventory = crawl(browser, args.out_dir, args.category, args.max_products)
-        finally:
-            browser.close()
-        write_csv(inventory_path, INVENTORY_FIELDS, inventory)
-        _write_json(state_path, {**(_read_json(state_path) or {}), "complete": True})
+    progress_path = args.out_dir / "progress.json"
+    sections_started: list[str] = []
+    progress = {"status": "running", "current_section": "", "current_item": "",
+                "sections_started": sections_started}
 
-    report = build_report(inventory, rules)
-    report_path = args.out_dir / "wa-restricted-items.csv"
-    write_csv(report_path, REPORT_FIELDS, report)
+    def section_started(section: str) -> None:
+        progress["current_section"] = section
+        progress["current_item"] = ""
+        sections_started.append(section)
+        _write_json(progress_path, progress)
+
+    def item_started(product_id: str, name: str) -> None:
+        progress["current_item"] = f"{name} (ID: {product_id})" if name else f"ID: {product_id}"
+        _write_json(progress_path, progress)
+
+    if not args.report_only:
+        _write_json(progress_path, progress)
+    completed = False
+    try:
+        if args.report_only:
+            with inventory_path.open(encoding="utf-8-sig", newline="") as f:
+                inventory = list(csv.DictReader(f))
+        else:
+            if not args.resume:  # a new crawl re-lists categories to pick up catalog changes
+                shutil.rmtree(args.out_dir / "listings", ignore_errors=True)
+                saved = argv if argv is not None else sys.argv[1:]
+                _write_json(state_path, {"argv": [a for a in saved if a != "--resume"], "complete": False})
+            browser = Browser(args.site_url, args.delay, hide_window=not args.show_window)
+            try:
+                inventory = crawl(browser, args.out_dir, args.category, args.max_products,
+                                  exact_categories=args.exact_category, on_section=section_started,
+                                  on_item=item_started)
+            finally:
+                browser.close()
+            if args.exact_category and args.max_products is None:
+                missing = sorted(set(args.category) - set(sections_started))
+                if missing:
+                    raise ValueError(f"Storefront sections not found: {', '.join(missing)}; refresh the section list")
+            write_csv(inventory_path, INVENTORY_FIELDS, inventory)
+            _write_json(state_path, {**(_read_json(state_path) or {}), "complete": True})
+
+        report = build_report(inventory, rules)
+        report_path = args.out_dir / "wa-restricted-items.csv"
+        write_csv(report_path, REPORT_FIELDS, report)
+        completed = True
+    finally:
+        if not args.report_only:
+            progress["status"] = "complete" if completed else "failed"
+            _write_json(progress_path, progress)
     print(f"Inventory: {len(inventory)} UPC rows -> {inventory_path}")
     print(f"Flagged:   {len(report)} rows -> {report_path}")
     return 0

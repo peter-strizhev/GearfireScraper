@@ -1,0 +1,4 @@
+Scanning section: magazines/rifle
+magazines/rifle: 228 products
+Inventory: 792 UPC rows -> /data/output/dashboard/5a700f4d6312429084022fa4161b4881/inventory.csv
+Flagged:   65 rows -> /data/output/dashboard/5a700f4d6312429084022fa4161b4881/wa-restricted-items.csv

@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
@@ -110,6 +111,8 @@ def _crawl_command(config: dict[str, object]) -> list[str]:
     ]
     for category in config.get("categories", []):
         command.extend(["--category", str(category)])
+    if config.get("exact_categories"):
+        command.append("--exact-category")
     if config.get("max_products") is not None:
         command.extend(["--max-products", str(config["max_products"])])
     return command
@@ -192,6 +195,18 @@ def _show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serve(args: argparse.Namespace) -> int:
+    from deploy.dashboard import serve
+
+    config = _read_config(Path(args.schedule_file).expanduser())
+    scheduler = threading.Thread(target=_run, args=(argparse.Namespace(
+        schedule_file=args.schedule_file, once=False,
+    ),), daemon=True)
+    scheduler.start()
+    serve(config, args.host, args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -215,6 +230,11 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "run":
             command.add_argument("--once", action="store_true", help="run immediately and exit")
         command.set_defaults(handler=handler)
+    server = subparsers.add_parser("serve", help="run the dashboard and weekly scheduler")
+    server.add_argument("--schedule-file", default=str(DEFAULT_SCHEDULE_FILE))
+    server.add_argument("--host", default="0.0.0.0")
+    server.add_argument("--port", type=int, default=8080)
+    server.set_defaults(handler=_serve)
     return parser
 
 

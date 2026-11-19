@@ -1,0 +1,1 @@
+{"argv": ["--site-url", "https://panteltactical.com", "--rules", "/app/washington-rules.csv", "--out-dir", "/data/output/dashboard/c3f0b5377d454ab98676cd3f13a8a78a", "--delay", "0.5", "--exact-category"], "complete": false}

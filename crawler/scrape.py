@@ -18,6 +18,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parent
 
@@ -160,7 +161,10 @@ def _read_json(path: Path) -> object | None:
 
 # ---------------------------------------------------------------- crawling
 
-def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: int | None) -> list[dict]:
+def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: int | None,
+          exact_categories: bool = False,
+          on_section: Callable[[str], None] | None = None,
+          on_item: Callable[[str, str], None] | None = None) -> list[dict]:
     """Return one inventory row per sub-product (UPC/variant).
 
     Product JSON lands in out_dir/cache and each category's product list in
@@ -176,8 +180,13 @@ def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: 
         for cat in dept["categories"]:
             for sub in cat["subCategories"]:
                 key = f"{slugify(cat['categoryName'])}/{slugify(sub['subCategoryName'])}"
-                if categories and not any(c in key for c in categories):
+                if categories and not any(c == key if exact_categories else c in key for c in categories):
                     continue
+                if max_products is not None and fetched >= max_products:
+                    return rows
+                if on_section is not None:
+                    on_section(key)
+                print(f"Scanning section: {key}", flush=True)
                 base = (f"/{slugify(dept['departmentName'])}/{key}/"
                         f"{dept['departmentId']}/{cat['categoryId']}/{sub['subCategoryId']}")
                 listing_file = listings_dir / f"{sub['subCategoryId']}.json"
@@ -189,6 +198,9 @@ def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: 
                 for product_id, sub_id, in_stock in listed:
                     if max_products is not None and fetched >= max_products:
                         return rows
+                    if on_item is not None:
+                        on_item(product_id, "")
+                    print(f"Fetching item: {product_id}", flush=True)
                     cache_file = cache_dir / f"{product_id}.json"
                     product = _read_json(cache_file)
                     if product is None:
@@ -200,6 +212,10 @@ def crawl(browser: Browser, out_dir: Path, categories: list[str], max_products: 
                             continue
                         product = node["product"]
                         _write_json(cache_file, product)
+                    name = " ".join(str(product.get("modelName") or "").split())
+                    if on_item is not None:
+                        on_item(product_id, name)
+                    print(f"Scanning item: {name or '(unnamed)'} (ID: {product_id})", flush=True)
                     fetched += 1
                     rows.extend(_product_rows(product, key, browser.site, dept, in_stock))
     return rows

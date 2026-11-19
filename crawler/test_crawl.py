@@ -1,9 +1,12 @@
 import json
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
-from crawl import build_report, crawl, decode_sveltekit
+from crawl import build_report, crawl, decode_sveltekit, main
 from gearfire_compliance import load_rules
 
 RULES = load_rules(Path(__file__).resolve().parents[1] / "washington-rules.csv")
@@ -108,6 +111,9 @@ class FakeSite:
     def __init__(self, fail_after=None):
         self.calls, self.fail_after = [], fail_after
 
+    def close(self):
+        pass
+
     def data(self, path):
         if self.fail_after is not None and len(self.calls) >= self.fail_after:
             raise KeyboardInterrupt("power lost")
@@ -126,6 +132,56 @@ class FakeSite:
 
 
 class ResumeTests(unittest.TestCase):
+    def test_section_progress_is_recorded_and_logged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            console = io.StringIO()
+            with patch("crawl.Browser", return_value=FakeSite()), redirect_stdout(console):
+                self.assertEqual(main(["--out-dir", directory, "--category", "rifles/one"]), 0)
+            progress = json.loads((output / "progress.json").read_text())
+            self.assertEqual(progress, {"status": "complete", "current_section": "rifles/one",
+                                        "current_item": "one-2 (ID: one-2)",
+                                        "sections_started": ["rifles/one"]})
+            self.assertIn("Scanning section: rifles/one", console.getvalue())
+            self.assertIn("Scanning item: one-1 (ID: one-1)", console.getvalue())
+
+    def test_failed_scan_preserves_current_section(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("crawl.Browser", return_value=FakeSite(fail_after=1)):
+                with self.assertRaises(KeyboardInterrupt):
+                    main(["--out-dir", directory])
+            progress = json.loads((Path(directory) / "progress.json").read_text())
+            self.assertEqual(progress["status"], "failed")
+            self.assertEqual(progress["current_section"], "rifles/one")
+
+    def test_failed_fetch_reports_product_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("crawl.Browser", return_value=FakeSite(fail_after=2)):
+                with self.assertRaises(KeyboardInterrupt):
+                    main(["--out-dir", directory])
+            progress = json.loads((Path(directory) / "progress.json").read_text())
+            self.assertEqual(progress["status"], "failed")
+            self.assertEqual(progress["current_item"], "ID: one-1")
+
+    def test_removed_exact_section_fails_instead_of_returning_empty_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("crawl.Browser", return_value=FakeSite()):
+                with self.assertRaisesRegex(ValueError, "Storefront sections not found"):
+                    main(["--out-dir", directory, "--category", "rifles/removed", "--exact-category"])
+            progress = json.loads((Path(directory) / "progress.json").read_text())
+            self.assertEqual(progress["status"], "failed")
+
+    def test_exact_category_does_not_match_partial_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rows = crawl(FakeSite(), Path(directory), ["rifles/o"], None)
+            self.assertEqual(len(rows), 2)
+        with tempfile.TemporaryDirectory() as directory:
+            rows = crawl(FakeSite(), Path(directory), ["rifles/o"], None, exact_categories=True)
+            self.assertEqual(rows, [])
+        with tempfile.TemporaryDirectory() as directory:
+            rows = crawl(FakeSite(), Path(directory), ["rifles/one"], None, exact_categories=True)
+            self.assertEqual([row["UPC"] for row in rows], ["one-1", "one-2"])
+
     def test_interrupted_crawl_resumes_without_refetching(self):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)

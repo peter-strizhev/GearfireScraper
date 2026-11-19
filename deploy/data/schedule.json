@@ -1,0 +1,11 @@
+{
+  "day": "sunday",
+  "time": "12:00",
+  "timezone": "America/Los_Angeles",
+  "site_url": "https://panteltactical.com",
+  "rules": "/app/washington-rules.csv",
+  "output_dir": "/data/output",
+  "delay": 0.5,
+  "categories": [],
+  "max_products": null
+}
