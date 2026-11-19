@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     shm_size: "2gb"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     volumes:
       - ./data:/data
       - ${GEARFIRE_OUTPUT_DIR:-./data/output}:/data/output
